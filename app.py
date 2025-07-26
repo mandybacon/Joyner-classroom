@@ -6,7 +6,6 @@ from datetime import datetime
 import pytz
 import os
 import io
-import xlsxwriter
 import base64
 from behavior_tracker import BehaviorTracker
 from data_manager import DataManager
@@ -26,95 +25,72 @@ if 'record_previous_date_active' not in st.session_state:
     st.session_state.record_previous_date_active = False
 if 'persistent_date' not in st.session_state:
     st.session_state.persistent_date = None
-if 'show_export_dialog' not in st.session_state:
-    st.session_state.show_export_dialog = False
-if 'show_print_dialog' not in st.session_state:
-    st.session_state.show_print_dialog = False
+if 'show_report_dialog' not in st.session_state:
+    st.session_state.show_report_dialog = False
 
 
-def generate_excel_report(start_date, end_date):
-    """Generates an Excel report for all students within a date range."""
-    all_data = st.session_state.data_manager.get_all_behavior_data()
-    students_df = st.session_state.students_df
-    if all_data is None or students_df is None or all_data.empty:
-        return None
-
-    try:
-        all_data['date'] = pd.to_datetime(all_data['date']).dt.date
-        mask = (all_data['date'] >= start_date) & (all_data['date'] <= end_date)
-        filtered_data = all_data.loc[mask]
-    except Exception as e:
-        st.error(f"Error filtering data: {e}")
-        return None
-
-    if filtered_data.empty:
-        return None
-
-    output = io.BytesIO()
-    workbook = xlsxwriter.Workbook(output, {'in_memory': True})
-    worksheet = workbook.add_worksheet("Behavior Report")
-
-    # --- Formatting ---
-    title_format = workbook.add_format({'bold': True, 'font_size': 16, 'align': 'center', 'valign': 'vcenter'})
-    header_format = workbook.add_format({'bold': True, 'bg_color': '#D3D3D3', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
-    cell_format = workbook.add_format({'align': 'center', 'valign': 'vcenter'})
-
-    # --- Write Titles and Headers ---
-    worksheet.merge_range('A1:E1', 'Behavior Report', title_format)
-    date_range_str = f"Date Range: {start_date.strftime('%m/%d/%Y')} to {end_date.strftime('%m/%d/%Y')}"
-    worksheet.merge_range('A2:E2', date_range_str, workbook.add_format({'align': 'center'}))
-
-    headers = ["Student Name", "Good Points", "Bad Points", "Good Behavior %", "Days Recorded"]
-    worksheet.write_row('A4', headers, header_format)
-    worksheet.set_column('A:A', 20)
-    worksheet.set_column('B:E', 15)
-
-    # --- Write Data for Each Student ---
-    row_num = 4
-    for student_name in students_df['name']:
-        student_data = filtered_data[filtered_data['student'] == student_name]
-
-        worksheet.write(row_num, 0, student_name, cell_format)
-
-        if student_data.empty:
-            worksheet.merge_range(row_num, 1, row_num, 4, "No data for this period", cell_format)
-            row_num += 1
-            continue
-
-        points_summary = st.session_state.behavior_tracker.calculate_points_summary(student_data)
-        
-        worksheet.write(row_num, 1, points_summary['total_good_points'], cell_format)
-        worksheet.write(row_num, 2, points_summary['total_bad_points'], cell_format)
-        worksheet.write(row_num, 3, f"{points_summary['good_percentage']}%", cell_format)
-        worksheet.write(row_num, 4, points_summary['days_recorded'], cell_format)
-
-        row_num += 1
-
-    workbook.close()
-    return output.getvalue()
-
-
-def generate_printable_html(student_list):
-    """Generates a single HTML string for printing one or more student reports."""
+def generate_rich_html_report(student_list):
+    """Generates a rich, interactive HTML report that opens in a new tab."""
     
     all_student_html = ""
     for student_name in student_list:
         student_data = st.session_state.data_manager.get_student_behavior_data(student_name)
         
+        pie_chart_html = "<h4>Behavior Distribution</h4><p>No data to display.</p>"
+        bar_chart_html = "<h4>Behavior Percentages</h4><p>No data to display.</p>"
+        timeline_html = "<h4>Recent Behavior</h4><p>No data to display.</p>"
+
+        if not student_data.empty:
+            colors = st.session_state.behavior_tracker.get_color_options()
+            color_names = list(colors.keys())
+            color_counts = student_data['color'].value_counts()
+            total_entries = len(student_data)
+            percentages = {color: (color_counts.get(color, 0) / total_entries) * 100 for color in color_names}
+
+            # --- Generate Pie Chart ---
+            fig_pie = px.pie(values=list(percentages.values()), names=color_names, color=color_names, color_discrete_map=colors)
+            fig_pie.update_layout(showlegend=False, width=300, height=300, margin=dict(l=10, r=10, t=10, b=10))
+            fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+            pie_chart_html = f"<h4>Behavior Distribution</h4>{fig_pie.to_html(full_html=False, include_plotlyjs='cdn')}"
+
+            # --- Generate Bar Chart ---
+            fig_bar = px.bar(x=color_names, y=[percentages[c] for c in color_names], color=color_names, color_discrete_map=colors)
+            fig_bar.update_layout(showlegend=False, width=300, height=300, margin=dict(l=10, r=10, t=10, b=10), yaxis_title="Percentage (%)")
+            bar_chart_html = f"<h4>Behavior Percentages</h4>{fig_bar.to_html(full_html=False, include_plotlyjs='cdn')}"
+
+            # --- Generate Timeline Chart ---
+            recent_data = student_data.sort_values('date', ascending=False).head(10)
+            fig_timeline = go.Figure()
+            if not recent_data.empty:
+                min_date = recent_data['date'].min()
+                for color in color_names:
+                    fig_timeline.add_trace(go.Scatter(x=[min_date], y=[color], mode='markers', marker=dict(size=0, opacity=0), showlegend=False))
+                for _, row in recent_data.iterrows():
+                    fig_timeline.add_trace(go.Scatter(x=[row['date']], y=[row['color']], mode='markers', marker=dict(size=15, color=colors[row['color']], line=dict(width=2, color='black')), name=row['color'], showlegend=False))
+            fig_timeline.update_layout(width=650, height=300, margin=dict(l=10, r=10, t=10, b=10), yaxis=dict(categoryorder='array', categoryarray=color_names), xaxis_title="Date")
+            timeline_html = f"<h4>Recent Behavior Timeline</h4>{fig_timeline.to_html(full_html=False, include_plotlyjs='cdn')}"
+
         points_summary = st.session_state.behavior_tracker.calculate_points_summary(student_data)
         
         all_student_html += f"""
         <div class="student-report">
             <h2>{student_name}</h2>
-            <div class="summary-table">
-                <h4>Point System Summary</h4>
-                <table>
-                    <tr><th>Category</th><th>Value</th></tr>
-                    <tr><td>Good Points</td><td>{points_summary['total_good_points']}</td></tr>
-                    <tr><td>Bad Points</td><td>{points_summary['total_bad_points']}</td></tr>
-                    <tr><td>Good Behavior %</td><td>{points_summary['good_percentage']}%</td></tr>
-                    <tr><td>Days Recorded</td><td>{points_summary['days_recorded']}</td></tr>
-                </table>
+            <div class="top-row">
+                <div class="summary-table">
+                    <h4>Point System Summary</h4>
+                    <table>
+                        <tr><th>Category</th><th>Value</th></tr>
+                        <tr><td>Good Points</td><td>{points_summary['total_good_points']}</td></tr>
+                        <tr><td>Bad Points</td><td>{points_summary['total_bad_points']}</td></tr>
+                        <tr><td>Good Behavior %</td><td>{points_summary['good_percentage']}%</td></tr>
+                        <tr><td>Days Recorded</td><td>{points_summary['days_recorded']}</td></tr>
+                    </table>
+                </div>
+                <div class="chart-cell">{pie_chart_html}</div>
+            </div>
+            <div class="bottom-row">
+                <div class="chart-cell">{bar_chart_html}</div>
+                <div class="chart-cell timeline">{timeline_html}</div>
             </div>
         </div>
         """
@@ -122,28 +98,18 @@ def generate_printable_html(student_list):
     full_html = f"""
     <html><head><title>Behavior Report</title><style>
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap');
-        body {{ font-family: 'Poppins', sans-serif; }}
-        .student-report {{ 
-            page-break-inside: avoid; 
-            border: 1px solid #ccc; 
-            border-radius: 10px; 
-            padding: 20px; 
-            margin: 20px auto; 
-            width: 80%;
-        }}
-        .student-report:last-child {{ page-break-after: auto; }}
-        h1 {{ text-align: center; }} 
-        h2 {{ border-bottom: 2px solid #eee; padding-bottom: 5px; text-align: center; }} 
-        h4 {{ text-align: center; margin-top: 0; }}
-        .summary-table {{ margin: 0 auto; }}
+        body {{ font-family: 'Poppins', sans-serif; padding: 20px; }}
+        .student-report {{ page-break-inside: avoid; border: 1px solid #ccc; border-radius: 10px; padding: 15px; margin-bottom: 20px; }}
+        h1 {{ text-align: center; }} h2 {{ border-bottom: 2px solid #eee; padding-bottom: 5px; }} h4 {{ text-align: center; margin-top: 0; }}
+        .top-row, .bottom-row {{ display: flex; align-items: center; justify-content: space-around; margin-bottom: 15px; }}
+        .summary-table, .chart-cell {{ flex: 1; padding: 10px; text-align: center; }}
+        .chart-cell.timeline {{ flex: 2; }}
         table {{ width: 100%; border-collapse: collapse; }}
         th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
         th {{ background-color: #f2f2f2; }}
-        @media print {{ body {{ -webkit-print-color-adjust: exact; }} }}
     </style></head><body>
         <h1>Behavior Report</h1>
         {all_student_html}
-        <script>window.onload = function() {{ window.print(); }};</script>
     </body></html>
     """
     return full_html
@@ -507,102 +473,49 @@ def display_student_details(student_name):
                                                   categoryarray=color_names))
             st.plotly_chart(fig_timeline, use_container_width=True)
 
-        # --- EXPORT, PRINT, AND CLEAR BUTTONS ---
+        # --- ACTION BUTTONS ---
         st.write("")
         st.write("")
-        export_col, print_col, clear_col = st.columns([0.4, 0.4, 0.2])
-        with export_col:
-            if st.button("Export Behavior Data"):
-                st.session_state.show_export_dialog = True
-                st.rerun()
-        with print_col:
-            if st.button("Print Behavior Data"):
-                st.session_state.show_print_dialog = True
+        report_col, clear_col = st.columns([0.8, 0.2])
+        with report_col:
+            if st.button("Generate Report..."):
+                st.session_state.show_report_dialog = True
                 st.rerun()
         with clear_col:
             if st.button("Clear Behavior Data",
                          key=f"clear_link_{student_name}"):
                 st.session_state[f'show_clear_dialog_{student_name}'] = True
 
-        # --- PRINT DIALOG ---
-        if st.session_state.show_print_dialog:
-            with st.form("print_form"):
+        # --- REPORT DIALOG ---
+        if st.session_state.show_report_dialog:
+            with st.form("report_form"):
                 st.markdown("---")
-                st.markdown("#### Print Behavior Report")
+                st.markdown("#### Generate Report")
                 
-                print_option = st.radio(
-                    "Select which students to print:",
+                report_option = st.radio(
+                    "Select which students to include:",
                     (f"Only {student_name}", "All Students"),
-                    key="print_radio"
+                    key="report_radio"
                 )
                 
-                submitted = st.form_submit_button("Generate & Print")
+                submitted = st.form_submit_button("Generate & Open Report")
 
                 if submitted:
-                    if print_option == f"Only {student_name}":
+                    if report_option == f"Only {student_name}":
                         student_list = [student_name]
                     else:
                         student_list = st.session_state.students_df['name'].tolist()
                     
-                    with st.spinner("Generating printable report..."):
-                        printable_html = generate_printable_html(student_list)
-                        st.components.v1.html(printable_html, height=0, scrolling=False)
-                        st.success("Your report is ready. Please check your browser's print dialog.")
+                    with st.spinner("Generating report..."):
+                        report_html = generate_rich_html_report(student_list)
+                        b64 = base64.b64encode(report_html.encode()).decode()
+                        href = f'<a href="data:text/html;base64,{b64}" target="_blank" rel="noopener noreferrer">Click here to open your report in a new tab</a>'
+                        st.markdown(href, unsafe_allow_html=True)
+                        st.success("Your report is ready!")
 
-            if st.button("Close Print View"):
-                st.session_state.show_print_dialog = False
+            if st.button("Close Report View"):
+                st.session_state.show_report_dialog = False
                 st.rerun()
-
-        # --- EXPORT DIALOG ---
-        if st.session_state.show_export_dialog:
-            with st.form("export_form"):
-                st.markdown("---")
-                st.markdown("#### Export Class Report")
-                
-                today = datetime.now(chicago_tz).date()
-                default_start = today - pd.Timedelta(days=30)
-                
-                date_range = st.date_input(
-                    "Select date range for report:",
-                    value=(default_start, today),
-                    max_value=today,
-                    format="MM/DD/YYYY"
-                )
-                
-                submitted = st.form_submit_button("Generate Report File")
-                
-                if submitted:
-                    if len(date_range) == 2:
-                        start_date, end_date = date_range
-                        if start_date > end_date:
-                            st.error("Error: Start date cannot be after end date.")
-                        else:
-                            with st.spinner("Generating report..."):
-                                report_bytes = generate_excel_report(start_date, end_date)
-                                if report_bytes:
-                                    st.session_state.report_to_download = {
-                                        "data": report_bytes,
-                                        "name": f"behavior_report_{start_date.strftime('%Y-%m-%d')}_to_{end_date.strftime('%Y-%m-%d')}.xlsx"
-                                    }
-                                else:
-                                    st.warning("No data found in the selected date range.")
-                    else:
-                        st.warning("Please select a valid date range.")
-
-            if 'report_to_download' in st.session_state:
-                st.download_button(
-                    label="Click to Download Report",
-                    data=st.session_state.report_to_download['data'],
-                    file_name=st.session_state.report_to_download['name'],
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-
-            if st.button("Close Export View"):
-                st.session_state.show_export_dialog = False
-                if 'report_to_download' in st.session_state:
-                    del st.session_state.report_to_download
-                st.rerun()
-
 
         # --- CLEAR DATA DIALOG ---
         if st.session_state.get(f'show_clear_dialog_{student_name}', False):
