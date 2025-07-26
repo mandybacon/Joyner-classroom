@@ -57,14 +57,14 @@ def generate_excel_report(start_date, end_date):
     cell_format = workbook.add_format({'align': 'center', 'valign': 'vcenter'})
 
     # --- Write Titles and Headers ---
-    worksheet.merge_range('A1:D1', 'Behavior Report', title_format)
+    worksheet.merge_range('A1:E1', 'Behavior Report', title_format)
     date_range_str = f"Date Range: {start_date.strftime('%m/%d/%Y')} to {end_date.strftime('%m/%d/%Y')}"
-    worksheet.merge_range('A2:D2', date_range_str, workbook.add_format({'align': 'center'}))
+    worksheet.merge_range('A2:E2', date_range_str, workbook.add_format({'align': 'center'}))
 
-    headers = ["Student Name", "Good Points", "Bad Points", "Good Behavior %"]
+    headers = ["Student Name", "Good Points", "Bad Points", "Good Behavior %", "Days Recorded"]
     worksheet.write_row('A4', headers, header_format)
     worksheet.set_column('A:A', 20)
-    worksheet.set_column('B:D', 15)
+    worksheet.set_column('B:E', 15)
 
     # --- Write Data for Each Student ---
     row_num = 4
@@ -74,7 +74,7 @@ def generate_excel_report(start_date, end_date):
         worksheet.write(row_num, 0, student_name, cell_format)
 
         if student_data.empty:
-            worksheet.merge_range(row_num, 1, row_num, 3, "No data for this period", cell_format)
+            worksheet.merge_range(row_num, 1, row_num, 4, "No data for this period", cell_format)
             row_num += 1
             continue
 
@@ -83,6 +83,7 @@ def generate_excel_report(start_date, end_date):
         worksheet.write(row_num, 1, points_summary['total_good_points'], cell_format)
         worksheet.write(row_num, 2, points_summary['total_bad_points'], cell_format)
         worksheet.write(row_num, 3, f"{points_summary['good_percentage']}%", cell_format)
+        worksheet.write(row_num, 4, points_summary['days_recorded'], cell_format)
 
         row_num += 1
 
@@ -453,11 +454,11 @@ def display_student_details(student_name):
         st.write("")
         export_col, clear_col = st.columns([0.8, 0.2])
         with export_col:
-            if st.button("Export Select Data"):
+            if st.button("Export Full Report..."):
                 st.session_state.show_export_dialog = True
                 st.rerun()
         with clear_col:
-            if st.button("Clear Behavior Data",
+            if st.button("Clear behavior data?",
                          key=f"clear_link_{student_name}",
                          help="Click to clear behavior data"):
                 st.session_state[f'show_clear_dialog_{student_name}'] = True
@@ -474,7 +475,8 @@ def display_student_details(student_name):
                 date_range = st.date_input(
                     "Select date range for report:",
                     value=(default_start, today),
-                    max_value=today
+                    max_value=today,
+                    format="MM/DD/YYYY"
                 )
                 
                 submitted = st.form_submit_button("Generate Report File")
