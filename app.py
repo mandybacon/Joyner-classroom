@@ -453,11 +453,11 @@ def display_student_details(student_name):
         st.write("")
         export_col, clear_col = st.columns([0.8, 0.2])
         with export_col:
-            if st.button("Export Full Report..."):
+            if st.button("Export Select Data"):
                 st.session_state.show_export_dialog = True
                 st.rerun()
         with clear_col:
-            if st.button("Clear behavior data?",
+            if st.button("Clear Behavior Data",
                          key=f"clear_link_{student_name}",
                          help="Click to clear behavior data"):
                 st.session_state[f'show_clear_dialog_{student_name}'] = True
@@ -466,13 +466,13 @@ def display_student_details(student_name):
         if st.session_state.show_export_dialog:
             with st.form("export_form"):
                 st.markdown("---")
-                st.markdown("#### Export Full Class Report")
+                st.markdown("#### Export Class Report")
                 
                 today = datetime.now(chicago_tz).date()
                 default_start = today - pd.Timedelta(days=30)
                 
                 date_range = st.date_input(
-                    "Select date range for report",
+                    "Select date range for report:",
                     value=(default_start, today),
                     max_value=today
                 )
