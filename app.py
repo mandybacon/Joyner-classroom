@@ -252,7 +252,7 @@ def main():
     else:
         # --- INITIAL EMPTY VIEW ---
         st.info(
-            "👈 Please upload a student roster file using the sidebar to get started"
+            "First time here, Lexi? Open the sidebar and upload your student roster to get started!"
         )
 
 
