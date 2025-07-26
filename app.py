@@ -6,8 +6,8 @@ from datetime import datetime
 import pytz
 import os
 import io
-import base64
 import xlsxwriter
+import base64
 from behavior_tracker import BehaviorTracker
 from data_manager import DataManager
 
@@ -95,67 +95,26 @@ def generate_excel_report(start_date, end_date):
 
 
 def generate_printable_html(student_list):
-    """Generates a rich, interactive HTML report that opens in a new tab."""
+    """Generates a single HTML string for printing one or more student reports."""
     
     all_student_html = ""
     for student_name in student_list:
         student_data = st.session_state.data_manager.get_student_behavior_data(student_name)
         
-        pie_chart_html = "<h4>Behavior Distribution</h4><p>No data to display.</p>"
-        bar_chart_html = "<h4>Behavior Percentages</h4><p>No data to display.</p>"
-        timeline_html = "<h4>Recent Behavior</h4><p>No data to display.</p>"
-
-        if not student_data.empty:
-            colors = st.session_state.behavior_tracker.get_color_options()
-            color_names = list(colors.keys())
-            color_counts = student_data['color'].value_counts()
-            total_entries = len(student_data)
-            percentages = {color: (color_counts.get(color, 0) / total_entries) * 100 for color in color_names}
-
-            # --- Generate Pie Chart ---
-            fig_pie = px.pie(values=list(percentages.values()), names=color_names, color=color_names, color_discrete_map=colors)
-            fig_pie.update_layout(showlegend=False, width=300, height=300, margin=dict(l=10, r=10, t=10, b=10))
-            fig_pie.update_traces(textposition='inside', textinfo='percent+label')
-            pie_chart_html = f"<h4>Behavior Distribution</h4>{fig_pie.to_html(full_html=False, include_plotlyjs='cdn')}"
-
-            # --- Generate Bar Chart ---
-            fig_bar = px.bar(x=color_names, y=[percentages[c] for c in color_names], color=color_names, color_discrete_map=colors)
-            fig_bar.update_layout(showlegend=False, width=300, height=300, margin=dict(l=10, r=10, t=10, b=10), yaxis_title="Percentage (%)")
-            bar_chart_html = f"<h4>Behavior Percentages</h4>{fig_bar.to_html(full_html=False, include_plotlyjs='cdn')}"
-
-            # --- Generate Timeline Chart ---
-            recent_data = student_data.sort_values('date', ascending=False).head(10)
-            fig_timeline = go.Figure()
-            if not recent_data.empty:
-                min_date = recent_data['date'].min()
-                for color in color_names:
-                    fig_timeline.add_trace(go.Scatter(x=[min_date], y=[color], mode='markers', marker=dict(size=0, opacity=0), showlegend=False))
-                for _, row in recent_data.iterrows():
-                    fig_timeline.add_trace(go.Scatter(x=[row['date']], y=[row['color']], mode='markers', marker=dict(size=15, color=colors[row['color']], line=dict(width=2, color='black')), name=row['color'], showlegend=False))
-            fig_timeline.update_layout(width=650, height=300, margin=dict(l=10, r=10, t=10, b=10), yaxis=dict(categoryorder='array', categoryarray=color_names), xaxis_title="Date")
-            timeline_html = f"<h4>Recent Behavior Timeline</h4>{fig_timeline.to_html(full_html=False, include_plotlyjs='cdn')}"
-
         points_summary = st.session_state.behavior_tracker.calculate_points_summary(student_data)
         
         all_student_html += f"""
         <div class="student-report">
             <h2>{student_name}</h2>
-            <div class="top-row">
-                <div class="summary-table">
-                    <h4>Point System Summary</h4>
-                    <table>
-                        <tr><th>Category</th><th>Value</th></tr>
-                        <tr><td>Good Points</td><td>{points_summary['total_good_points']}</td></tr>
-                        <tr><td>Bad Points</td><td>{points_summary['total_bad_points']}</td></tr>
-                        <tr><td>Good Behavior %</td><td>{points_summary['good_percentage']}%</td></tr>
-                        <tr><td>Days Recorded</td><td>{points_summary['days_recorded']}</td></tr>
-                    </table>
-                </div>
-                <div class="chart-cell">{pie_chart_html}</div>
-            </div>
-            <div class="bottom-row">
-                <div class="chart-cell">{bar_chart_html}</div>
-                <div class="chart-cell timeline">{timeline_html}</div>
+            <div class="summary-table">
+                <h4>Point System Summary</h4>
+                <table>
+                    <tr><th>Category</th><th>Value</th></tr>
+                    <tr><td>Good Points</td><td>{points_summary['total_good_points']}</td></tr>
+                    <tr><td>Bad Points</td><td>{points_summary['total_bad_points']}</td></tr>
+                    <tr><td>Good Behavior %</td><td>{points_summary['good_percentage']}%</td></tr>
+                    <tr><td>Days Recorded</td><td>{points_summary['days_recorded']}</td></tr>
+                </table>
             </div>
         </div>
         """
@@ -163,18 +122,28 @@ def generate_printable_html(student_list):
     full_html = f"""
     <html><head><title>Behavior Report</title><style>
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap');
-        body {{ font-family: 'Poppins', sans-serif; padding: 20px; }}
-        .student-report {{ page-break-inside: avoid; border: 1px solid #ccc; border-radius: 10px; padding: 15px; margin-bottom: 20px; }}
-        h1 {{ text-align: center; }} h2 {{ border-bottom: 2px solid #eee; padding-bottom: 5px; }} h4 {{ text-align: center; margin-top: 0; }}
-        .top-row, .bottom-row {{ display: flex; align-items: center; justify-content: space-around; margin-bottom: 15px; }}
-        .summary-table, .chart-cell {{ flex: 1; padding: 10px; text-align: center; }}
-        .chart-cell.timeline {{ flex: 2; }}
+        body {{ font-family: 'Poppins', sans-serif; }}
+        .student-report {{ 
+            page-break-inside: avoid; 
+            border: 1px solid #ccc; 
+            border-radius: 10px; 
+            padding: 20px; 
+            margin: 20px auto; 
+            width: 80%;
+        }}
+        .student-report:last-child {{ page-break-after: auto; }}
+        h1 {{ text-align: center; }} 
+        h2 {{ border-bottom: 2px solid #eee; padding-bottom: 5px; text-align: center; }} 
+        h4 {{ text-align: center; margin-top: 0; }}
+        .summary-table {{ margin: 0 auto; }}
         table {{ width: 100%; border-collapse: collapse; }}
         th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
         th {{ background-color: #f2f2f2; }}
+        @media print {{ body {{ -webkit-print-color-adjust: exact; }} }}
     </style></head><body>
         <h1>Behavior Report</h1>
         {all_student_html}
+        <script>window.onload = function() {{ window.print(); }};</script>
     </body></html>
     """
     return full_html
@@ -538,7 +507,7 @@ def display_student_details(student_name):
                                                   categoryarray=color_names))
             st.plotly_chart(fig_timeline, use_container_width=True)
 
-        # --- ACTION BUTTONS ---
+        # --- EXPORT, PRINT, AND CLEAR BUTTONS ---
         st.write("")
         st.write("")
         export_col, print_col, clear_col = st.columns([0.4, 0.4, 0.2])
@@ -567,7 +536,7 @@ def display_student_details(student_name):
                     key="print_radio"
                 )
                 
-                submitted = st.form_submit_button("Generate & Open Report")
+                submitted = st.form_submit_button("Generate & Print")
 
                 if submitted:
                     if print_option == f"Only {student_name}":
@@ -575,28 +544,10 @@ def display_student_details(student_name):
                     else:
                         student_list = st.session_state.students_df['name'].tolist()
                     
-                    with st.spinner("Generating report..."):
-                        report_html = generate_printable_html(student_list)
-                        js_html = report_html.replace("`", "\\`").replace("\n", "")
-                        
-                        js_script = f"""
-                            <script>
-                                const reportHtml = `{js_html}`;
-                                const newTab = window.open();
-                                if (newTab) {{
-                                    newTab.document.open();
-                                    newTab.document.write(reportHtml);
-                                    newTab.document.close();
-                                }} else {{
-                                    // This part is for the main window if pop-up fails
-                                    const mainApp = parent.document.querySelector('iframe').contentDocument;
-                                    mainApp.body.innerHTML = '<h1>Pop-up blocked</h1><p>Please allow pop-ups for this site to view the report.</p>';
-                                }}
-                            </script>
-                        """
-                        st.components.v1.html(js_script, height=0)
-                        st.success("Your report is ready! If a new tab did not open, please check your browser's pop-up blocker.")
-
+                    with st.spinner("Generating printable report..."):
+                        printable_html = generate_printable_html(student_list)
+                        st.components.v1.html(printable_html, height=0, scrolling=False)
+                        st.success("Your report is ready. Please check your browser's print dialog.")
 
             if st.button("Close Print View"):
                 st.session_state.show_print_dialog = False
