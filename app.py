@@ -5,6 +5,8 @@ import plotly.graph_objects as go
 from datetime import datetime
 import pytz
 import os
+import io
+import xlsxwriter
 from behavior_tracker import BehaviorTracker
 from data_manager import DataManager
 
@@ -17,9 +19,120 @@ if 'students_df' not in st.session_state:
     st.session_state.students_df = None
 if 'behavior_tracker' not in st.session_state:
     st.session_state.behavior_tracker = BehaviorTracker()
-# Add a new state variable to track speed entry mode
 if 'speed_mode_active' not in st.session_state:
     st.session_state.speed_mode_active = False
+if 'record_previous_date_active' not in st.session_state:
+    st.session_state.record_previous_date_active = False
+if 'persistent_date' not in st.session_state:
+    st.session_state.persistent_date = None
+if 'show_export_dialog' not in st.session_state:
+    st.session_state.show_export_dialog = False
+
+
+def generate_excel_report(start_date, end_date):
+    """Generates an Excel report for all students within a date range."""
+    all_data = st.session_state.data_manager.get_all_behavior_data()
+    students_df = st.session_state.students_df
+    if all_data is None or students_df is None or all_data.empty:
+        return None
+
+    try:
+        all_data['date'] = pd.to_datetime(all_data['date']).dt.date
+        mask = (all_data['date'] >= start_date) & (all_data['date']
+                                                   <= end_date)
+        filtered_data = all_data.loc[mask]
+    except Exception as e:
+        st.error(f"Error filtering data: {e}")
+        return None
+
+    if filtered_data.empty:
+        return None
+
+    output = io.BytesIO()
+    workbook = xlsxwriter.Workbook(output, {'in_memory': True})
+    worksheet = workbook.add_worksheet("Behavior Report")
+
+    # --- Formatting ---
+    title_format = workbook.add_format({
+        'bold': True,
+        'font_size': 16,
+        'align': 'center',
+        'valign': 'vcenter'
+    })
+    header_format = workbook.add_format({
+        'bold': True,
+        'bg_color': '#D3D3D3',
+        'border': 1,
+        'align': 'center',
+        'valign': 'vcenter'
+    })
+    cell_format = workbook.add_format({'align': 'center', 'valign': 'vcenter'})
+
+    # --- Write Titles and Headers ---
+    worksheet.merge_range('A1:E1', 'Behavior Report', title_format)
+    date_range_str = f"Date Range: {start_date.strftime('%m/%d/%Y')} to {end_date.strftime('%m/%d/%Y')}"
+    worksheet.merge_range('A2:E2', date_range_str,
+                          workbook.add_format({'align': 'center'}))
+
+    headers = [
+        "Student Name", "Good Points", "Bad Points", "Good Behavior %",
+        "Behavior Chart"
+    ]
+    worksheet.write_row('A4', headers, header_format)
+    worksheet.set_column('A:A', 20)
+    worksheet.set_column('B:D', 15)
+    worksheet.set_column('E:E', 30)
+
+    # --- Write Data for Each Student ---
+    row_num = 4
+    for student_name in sorted(students_df['name']):
+        worksheet.set_row(row_num, 120)  # Set row height for the chart
+        student_data = filtered_data[filtered_data['student'] == student_name]
+
+        worksheet.write(row_num, 0, student_name, cell_format)
+
+        if student_data.empty:
+            worksheet.merge_range(row_num, 1, row_num, 4,
+                                  "No data for this period", cell_format)
+            row_num += 1
+            continue
+
+        points_summary = st.session_state.behavior_tracker.calculate_points_summary(
+            student_data)
+
+        worksheet.write(row_num, 1, points_summary['total_good_points'],
+                        cell_format)
+        worksheet.write(row_num, 2, points_summary['total_bad_points'],
+                        cell_format)
+        worksheet.write(row_num, 3, f"{points_summary['good_percentage']}%",
+                        cell_format)
+
+        colors = st.session_state.behavior_tracker.get_color_options()
+        color_counts = student_data['color'].value_counts()
+
+        fig = px.pie(values=color_counts.values,
+                     names=color_counts.index,
+                     color=color_counts.index,
+                     color_discrete_map=colors)
+        fig.update_layout(showlegend=False,
+                          width=220,
+                          height=150,
+                          margin=dict(l=10, r=10, t=10, b=10))
+
+        try:
+            image_data = io.BytesIO(fig.to_image(format="png", scale=2))
+            worksheet.insert_image(row_num, 4, 'chart.png', {
+                'image_data': image_data,
+                'x_offset': 5,
+                'y_offset': 5
+            })
+        except Exception as e:
+            worksheet.write(row_num, 4, "Chart error", cell_format)
+
+        row_num += 1
+
+    workbook.close()
+    return output.getvalue()
 
 
 def main():
@@ -40,11 +153,11 @@ def main():
                        layout="wide",
                        initial_sidebar_state="collapsed")
 
-    # --- STYLING BLOCK FOR BUTTONS AND NEW HEADER ---
+    # --- STYLING BLOCK FOR HEADER AND BUTTONS ---
     colors = st.session_state.behavior_tracker.get_color_options()
     style_css = """
     <style>
-        /* Color Stripe Banner Style */
+        /* Light Mode Banner Styles */
         .stripe-banner {
             background-color: #FFFFFF;
             border-radius: 15px;
@@ -60,34 +173,32 @@ def main():
             margin-bottom: 20px;
             color: #333;
         }
+
+        /* Dark Mode Banner Styles */
+        body[data-theme="dark"] .stripe-banner {
+            background-color: #262730; /* Streamlit's dark background */
+            border: 1px solid #444;
+        }
+        body[data-theme="dark"] .stripe-title {
+            color: #FAFAFA; /* Light text for dark mode */
+        }
+
+        /* Common Banner Elements */
         .color-stripe {
             display: flex;
             height: 15px;
             width: 100%;
             border-radius: 10px;
-            overflow: hidden; /* Ensures the child elements respect the border radius */
+            overflow: hidden;
         }
         .color-box {
-            flex-grow: 1; /* Each color box takes up equal space */
+            flex-grow: 1;
         }
+    </style>
     """
-    # Add button styles to the same CSS block
-    for color, hex_code in colors.items():
-        style_css += f"""
-            div.div-{color} div[data-testid="stButton"] > button {{
-                background-color: {hex_code} !important;
-                color: white !important;
-                font-weight: bold !important;
-                border: 1px solid black !important;
-                border-radius: 6px !important;
-            }}
-        """
-    style_css += "</style>"
     st.markdown(style_css, unsafe_allow_html=True)
-    # --- END STYLING BLOCK ---
 
     # --- COLOR STRIPE HEADER ---
-    # Generate the HTML for the color boxes dynamically
     color_boxes_html = "".join([
         f'<div class="color-box" style="background-color: {hex_code};"></div>'
         for hex_code in colors.values()
@@ -105,7 +216,6 @@ def main():
 
     # --- Speed Entry Button in the top-right corner ---
     if st.session_state.students_df is not None:
-        # Add some vertical space to push the button down
         st.markdown("<div style='margin-top: 10px;'></div>",
                     unsafe_allow_html=True)
         _, col_btn = st.columns([0.8, 0.2])
@@ -196,9 +306,6 @@ def main():
         cols = st.columns(len(color_names))
         for i, color in enumerate(color_names):
             with cols[i]:
-                # Wrap button in a styled div
-                st.markdown(f'<div class="div-{color}">',
-                            unsafe_allow_html=True)
                 if st.button(color,
                              key=f"speed_color_{color}_{current_student}",
                              use_container_width=True):
@@ -206,7 +313,6 @@ def main():
                         current_student, color, date_str)
                     st.session_state.speed_entry_index += 1
                     st.rerun()
-                st.markdown('</div>', unsafe_allow_html=True)
 
         st.markdown("###")
         if st.button("Skip Student"):
@@ -242,7 +348,6 @@ def main():
                     st.rerun()
         with col2:
             if st.session_state.selected_student:
-                # Removed the st.write("") calls to move content up
                 display_student_details(st.session_state.selected_student)
             else:
                 st.info(
@@ -252,7 +357,7 @@ def main():
     else:
         # --- INITIAL EMPTY VIEW ---
         st.info(
-            "First time here, Lexi? Open the sidebar and upload your student roster to get started!"
+            "👈 Please upload a student roster file using the sidebar to get started"
         )
 
 
@@ -265,21 +370,29 @@ def display_student_details(student_name):
     colors = st.session_state.behavior_tracker.get_color_options()
     color_names = list(colors.keys())
 
-    record_previous = st.checkbox("Record behavior for previous date?")
-
+    # --- MODIFIED: Persistent Date Logic ---
     chicago_tz = pytz.timezone('America/Chicago')
     current_date_chicago = datetime.now(chicago_tz).date()
 
-    if record_previous:
+    if st.session_state.persistent_date is None:
+        st.session_state.persistent_date = current_date_chicago
+
+    st.session_state.record_previous_date_active = st.checkbox(
+        "Record behavior for previous date?",
+        value=st.session_state.record_previous_date_active)
+
+    if st.session_state.record_previous_date_active:
         selected_date = st.date_input(
             "Select date:",
-            value=current_date_chicago,
+            value=st.session_state.persistent_date,
             max_value=current_date_chicago,
             help=
-            "Choose the date for the behavior entry (cannot be in the future)",
+            "This date will be used for all students until the box is unchecked.",
             format="MM/DD/YYYY")
+        st.session_state.persistent_date = selected_date
     else:
         selected_date = current_date_chicago
+        st.session_state.persistent_date = current_date_chicago
 
     date_display = selected_date.strftime("%m/%d/%Y")
     st.write(f"**Recording for:** {date_display}")
@@ -287,15 +400,12 @@ def display_student_details(student_name):
     cols = st.columns(7)
     for i, color in enumerate(color_names):
         with cols[i]:
-            # Wrap button in a styled div
-            st.markdown(f'<div class="div-{color}">', unsafe_allow_html=True)
             if st.button(color,
                          key=f"color_{color}_{student_name}",
                          use_container_width=True):
                 st.session_state.data_manager.add_behavior_entry(
                     student_name, color, selected_date.strftime("%Y-%m-%d"))
                 st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
 
     student_data = st.session_state.data_manager.get_student_behavior_data(
         student_name)
@@ -349,7 +459,6 @@ def display_student_details(student_name):
         with col4:
             st.metric("Days Recorded", points_summary['days_recorded'])
 
-        # Re-added the subheader for the timeline and kept the space before it.
         st.write("")
         st.subheader("Recent Behavior Timeline")
         recent_data = student_data.sort_values('date',
@@ -375,7 +484,6 @@ def display_student_details(student_name):
                                            line=dict(width=2, color='black')),
                                name=row['color'],
                                showlegend=False))
-            # Removed the title from the layout to avoid duplication
             fig_timeline.update_layout(xaxis_title="Date",
                                        yaxis_title="Behavior Color",
                                        xaxis=dict(tickformat='%m/%d'),
@@ -383,16 +491,75 @@ def display_student_details(student_name):
                                                   categoryarray=color_names))
             st.plotly_chart(fig_timeline, use_container_width=True)
 
-        # Add more space before the clear button and move it further right
+        # --- EXPORT AND CLEAR BUTTONS ---
         st.write("")
         st.write("")
-        clear_col1, clear_col2 = st.columns([0.8, 0.2])
-        with clear_col2:
+        export_col, clear_col = st.columns([0.8, 0.2])
+        with export_col:
+            if st.button("Export Full Report..."):
+                st.session_state.show_export_dialog = True
+                st.rerun()
+        with clear_col:
             if st.button("Clear behavior data?",
                          key=f"clear_link_{student_name}",
                          help="Click to clear behavior data"):
                 st.session_state[f'show_clear_dialog_{student_name}'] = True
 
+        # --- EXPORT DIALOG ---
+        if st.session_state.show_export_dialog:
+            with st.form("export_form"):
+                st.markdown("---")
+                st.markdown("#### Export Full Class Report")
+
+                today = datetime.now(chicago_tz).date()
+                default_start = today - pd.Timedelta(days=30)
+
+                date_range = st.date_input("Select date range for report",
+                                           value=(default_start, today),
+                                           max_value=today)
+
+                submitted = st.form_submit_button("Generate Report File")
+
+                if submitted:
+                    if len(date_range) == 2:
+                        start_date, end_date = date_range
+                        if start_date > end_date:
+                            st.error(
+                                "Error: Start date cannot be after end date.")
+                        else:
+                            with st.spinner("Generating report..."):
+                                report_bytes = generate_excel_report(
+                                    start_date, end_date)
+                                if report_bytes:
+                                    st.session_state.report_to_download = {
+                                        "data":
+                                        report_bytes,
+                                        "name":
+                                        f"behavior_report_{start_date.strftime('%Y-%m-%d')}_to_{end_date.strftime('%Y-%m-%d')}.xlsx"
+                                    }
+                                else:
+                                    st.warning(
+                                        "No data found in the selected date range."
+                                    )
+                    else:
+                        st.warning("Please select a valid date range.")
+
+            if 'report_to_download' in st.session_state:
+                st.download_button(
+                    label="Click to Download Report",
+                    data=st.session_state.report_to_download['data'],
+                    file_name=st.session_state.report_to_download['name'],
+                    mime=
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+
+            if st.button("Close Export View"):
+                st.session_state.show_export_dialog = False
+                if 'report_to_download' in st.session_state:
+                    del st.session_state.report_to_download
+                st.rerun()
+
+        # --- CLEAR DATA DIALOG ---
         if st.session_state.get(f'show_clear_dialog_{student_name}', False):
             with st.container():
                 st.markdown("---")
