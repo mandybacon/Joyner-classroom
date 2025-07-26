@@ -548,7 +548,7 @@ def display_student_details(student_name):
         st.write("")
         export_col, print_col, clear_col = st.columns([0.4, 0.4, 0.2])
         with export_col:
-            if st.button("Export Full Report..."):
+            if st.button("Export Behavior Data"):
                 st.session_state.show_export_dialog = True
                 st.rerun()
         with print_col:
