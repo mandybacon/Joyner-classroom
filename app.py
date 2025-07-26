@@ -38,8 +38,7 @@ def generate_excel_report(start_date, end_date):
 
     try:
         all_data['date'] = pd.to_datetime(all_data['date']).dt.date
-        mask = (all_data['date'] >= start_date) & (all_data['date']
-                                                   <= end_date)
+        mask = (all_data['date'] >= start_date) & (all_data['date'] <= end_date)
         filtered_data = all_data.loc[mask]
     except Exception as e:
         st.error(f"Error filtering data: {e}")
@@ -53,31 +52,16 @@ def generate_excel_report(start_date, end_date):
     worksheet = workbook.add_worksheet("Behavior Report")
 
     # --- Formatting ---
-    title_format = workbook.add_format({
-        'bold': True,
-        'font_size': 16,
-        'align': 'center',
-        'valign': 'vcenter'
-    })
-    header_format = workbook.add_format({
-        'bold': True,
-        'bg_color': '#D3D3D3',
-        'border': 1,
-        'align': 'center',
-        'valign': 'vcenter'
-    })
+    title_format = workbook.add_format({'bold': True, 'font_size': 16, 'align': 'center', 'valign': 'vcenter'})
+    header_format = workbook.add_format({'bold': True, 'bg_color': '#D3D3D3', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
     cell_format = workbook.add_format({'align': 'center', 'valign': 'vcenter'})
 
     # --- Write Titles and Headers ---
     worksheet.merge_range('A1:E1', 'Behavior Report', title_format)
     date_range_str = f"Date Range: {start_date.strftime('%m/%d/%Y')} to {end_date.strftime('%m/%d/%Y')}"
-    worksheet.merge_range('A2:E2', date_range_str,
-                          workbook.add_format({'align': 'center'}))
+    worksheet.merge_range('A2:E2', date_range_str, workbook.add_format({'align': 'center'}))
 
-    headers = [
-        "Student Name", "Good Points", "Bad Points", "Good Behavior %",
-        "Behavior Chart"
-    ]
+    headers = ["Student Name", "Good Points", "Bad Points", "Good Behavior %", "Behavior Chart"]
     worksheet.write_row('A4', headers, header_format)
     worksheet.set_column('A:A', 20)
     worksheet.set_column('B:D', 15)
@@ -85,49 +69,45 @@ def generate_excel_report(start_date, end_date):
 
     # --- Write Data for Each Student ---
     row_num = 4
-    for student_name in sorted(students_df['name']):
+    # MODIFIED: Iterate through students_df['name'] to keep original order
+    for student_name in students_df['name']:
         worksheet.set_row(row_num, 120)  # Set row height for the chart
         student_data = filtered_data[filtered_data['student'] == student_name]
 
         worksheet.write(row_num, 0, student_name, cell_format)
 
         if student_data.empty:
-            worksheet.merge_range(row_num, 1, row_num, 4,
-                                  "No data for this period", cell_format)
+            worksheet.merge_range(row_num, 1, row_num, 4, "No data for this period", cell_format)
             row_num += 1
             continue
 
-        points_summary = st.session_state.behavior_tracker.calculate_points_summary(
-            student_data)
-
-        worksheet.write(row_num, 1, points_summary['total_good_points'],
-                        cell_format)
-        worksheet.write(row_num, 2, points_summary['total_bad_points'],
-                        cell_format)
-        worksheet.write(row_num, 3, f"{points_summary['good_percentage']}%",
-                        cell_format)
+        points_summary = st.session_state.behavior_tracker.calculate_points_summary(student_data)
+        
+        worksheet.write(row_num, 1, points_summary['total_good_points'], cell_format)
+        worksheet.write(row_num, 2, points_summary['total_bad_points'], cell_format)
+        worksheet.write(row_num, 3, f"{points_summary['good_percentage']}%", cell_format)
 
         colors = st.session_state.behavior_tracker.get_color_options()
         color_counts = student_data['color'].value_counts()
-
-        fig = px.pie(values=color_counts.values,
-                     names=color_counts.index,
-                     color=color_counts.index,
-                     color_discrete_map=colors)
-        fig.update_layout(showlegend=False,
-                          width=220,
-                          height=150,
-                          margin=dict(l=10, r=10, t=10, b=10))
-
+        
+        fig = px.pie(
+            values=color_counts.values,
+            names=color_counts.index,
+            color=color_counts.index,
+            color_discrete_map=colors
+        )
+        fig.update_layout(
+            showlegend=False, width=220, height=150,
+            margin=dict(l=10, r=10, t=10, b=10)
+        )
+        
         try:
             image_data = io.BytesIO(fig.to_image(format="png", scale=2))
-            worksheet.insert_image(row_num, 4, 'chart.png', {
-                'image_data': image_data,
-                'x_offset': 5,
-                'y_offset': 5
-            })
+            worksheet.insert_image(row_num, 4, 'chart.png', {'image_data': image_data, 'x_offset': 5, 'y_offset': 5})
         except Exception as e:
-            worksheet.write(row_num, 4, "Chart error", cell_format)
+            # MODIFIED: Provide a more helpful error message in the app UI
+            st.error(f"Chart error for {student_name}: {e}. Ensure 'kaleido' is in requirements.txt.")
+            worksheet.write(row_num, 4, "Chart Error", cell_format)
 
         row_num += 1
 
@@ -203,7 +183,7 @@ def main():
         f'<div class="color-box" style="background-color: {hex_code};"></div>'
         for hex_code in colors.values()
     ])
-
+    
     st.markdown(f"""
         <div class="stripe-banner">
             <div class="stripe-title">Mrs. Joyner's Class</div>
@@ -211,8 +191,8 @@ def main():
                 {color_boxes_html}
             </div>
         </div>
-    """,
-                unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
+
 
     # --- Speed Entry Button in the top-right corner ---
     if st.session_state.students_df is not None:
@@ -379,20 +359,22 @@ def display_student_details(student_name):
 
     st.session_state.record_previous_date_active = st.checkbox(
         "Record behavior for previous date?",
-        value=st.session_state.record_previous_date_active)
+        value=st.session_state.record_previous_date_active
+    )
 
     if st.session_state.record_previous_date_active:
         selected_date = st.date_input(
             "Select date:",
             value=st.session_state.persistent_date,
             max_value=current_date_chicago,
-            help=
-            "This date will be used for all students until the box is unchecked.",
-            format="MM/DD/YYYY")
+            help="This date will be used for all students until the box is unchecked.",
+            format="MM/DD/YYYY"
+        )
         st.session_state.persistent_date = selected_date
     else:
         selected_date = current_date_chicago
         st.session_state.persistent_date = current_date_chicago
+
 
     date_display = selected_date.strftime("%m/%d/%Y")
     st.write(f"**Recording for:** {date_display}")
@@ -510,37 +492,33 @@ def display_student_details(student_name):
             with st.form("export_form"):
                 st.markdown("---")
                 st.markdown("#### Export Full Class Report")
-
+                
                 today = datetime.now(chicago_tz).date()
                 default_start = today - pd.Timedelta(days=30)
-
-                date_range = st.date_input("Select date range for report",
-                                           value=(default_start, today),
-                                           max_value=today)
-
+                
+                date_range = st.date_input(
+                    "Select date range for report",
+                    value=(default_start, today),
+                    max_value=today
+                )
+                
                 submitted = st.form_submit_button("Generate Report File")
-
+                
                 if submitted:
                     if len(date_range) == 2:
                         start_date, end_date = date_range
                         if start_date > end_date:
-                            st.error(
-                                "Error: Start date cannot be after end date.")
+                            st.error("Error: Start date cannot be after end date.")
                         else:
                             with st.spinner("Generating report..."):
-                                report_bytes = generate_excel_report(
-                                    start_date, end_date)
+                                report_bytes = generate_excel_report(start_date, end_date)
                                 if report_bytes:
                                     st.session_state.report_to_download = {
-                                        "data":
-                                        report_bytes,
-                                        "name":
-                                        f"behavior_report_{start_date.strftime('%Y-%m-%d')}_to_{end_date.strftime('%Y-%m-%d')}.xlsx"
+                                        "data": report_bytes,
+                                        "name": f"behavior_report_{start_date.strftime('%Y-%m-%d')}_to_{end_date.strftime('%Y-%m-%d')}.xlsx"
                                     }
                                 else:
-                                    st.warning(
-                                        "No data found in the selected date range."
-                                    )
+                                    st.warning("No data found in the selected date range.")
                     else:
                         st.warning("Please select a valid date range.")
 
@@ -549,8 +527,7 @@ def display_student_details(student_name):
                     label="Click to Download Report",
                     data=st.session_state.report_to_download['data'],
                     file_name=st.session_state.report_to_download['name'],
-                    mime=
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
             if st.button("Close Export View"):
@@ -558,6 +535,7 @@ def display_student_details(student_name):
                 if 'report_to_download' in st.session_state:
                     del st.session_state.report_to_download
                 st.rerun()
+
 
         # --- CLEAR DATA DIALOG ---
         if st.session_state.get(f'show_clear_dialog_{student_name}', False):
