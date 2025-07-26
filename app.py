@@ -454,13 +454,12 @@ def display_student_details(student_name):
         st.write("")
         export_col, clear_col = st.columns([0.8, 0.2])
         with export_col:
-            if st.button("Export Full Report..."):
+            if st.button("Export Select Data"):
                 st.session_state.show_export_dialog = True
                 st.rerun()
         with clear_col:
-            if st.button("Clear behavior data?",
-                         key=f"clear_link_{student_name}",
-                         help="Click to clear behavior data"):
+            if st.button("Clear Behavior Data",
+                         key=f"clear_link_{student_name}"):
                 st.session_state[f'show_clear_dialog_{student_name}'] = True
 
         # --- EXPORT DIALOG ---
