@@ -57,27 +57,24 @@ def generate_excel_report(start_date, end_date):
     cell_format = workbook.add_format({'align': 'center', 'valign': 'vcenter'})
 
     # --- Write Titles and Headers ---
-    worksheet.merge_range('A1:E1', 'Behavior Report', title_format)
+    worksheet.merge_range('A1:D1', 'Behavior Report', title_format)
     date_range_str = f"Date Range: {start_date.strftime('%m/%d/%Y')} to {end_date.strftime('%m/%d/%Y')}"
-    worksheet.merge_range('A2:E2', date_range_str, workbook.add_format({'align': 'center'}))
+    worksheet.merge_range('A2:D2', date_range_str, workbook.add_format({'align': 'center'}))
 
-    headers = ["Student Name", "Good Points", "Bad Points", "Good Behavior %", "Behavior Chart"]
+    headers = ["Student Name", "Good Points", "Bad Points", "Good Behavior %"]
     worksheet.write_row('A4', headers, header_format)
     worksheet.set_column('A:A', 20)
     worksheet.set_column('B:D', 15)
-    worksheet.set_column('E:E', 30)
 
     # --- Write Data for Each Student ---
     row_num = 4
-    # MODIFIED: Iterate through students_df['name'] to keep original order
     for student_name in students_df['name']:
-        worksheet.set_row(row_num, 120)  # Set row height for the chart
         student_data = filtered_data[filtered_data['student'] == student_name]
 
         worksheet.write(row_num, 0, student_name, cell_format)
 
         if student_data.empty:
-            worksheet.merge_range(row_num, 1, row_num, 4, "No data for this period", cell_format)
+            worksheet.merge_range(row_num, 1, row_num, 3, "No data for this period", cell_format)
             row_num += 1
             continue
 
@@ -86,28 +83,6 @@ def generate_excel_report(start_date, end_date):
         worksheet.write(row_num, 1, points_summary['total_good_points'], cell_format)
         worksheet.write(row_num, 2, points_summary['total_bad_points'], cell_format)
         worksheet.write(row_num, 3, f"{points_summary['good_percentage']}%", cell_format)
-
-        colors = st.session_state.behavior_tracker.get_color_options()
-        color_counts = student_data['color'].value_counts()
-        
-        fig = px.pie(
-            values=color_counts.values,
-            names=color_counts.index,
-            color=color_counts.index,
-            color_discrete_map=colors
-        )
-        fig.update_layout(
-            showlegend=False, width=220, height=150,
-            margin=dict(l=10, r=10, t=10, b=10)
-        )
-        
-        try:
-            image_data = io.BytesIO(fig.to_image(format="png", scale=2))
-            worksheet.insert_image(row_num, 4, 'chart.png', {'image_data': image_data, 'x_offset': 5, 'y_offset': 5})
-        except Exception as e:
-            # MODIFIED: Provide a more helpful error message in the app UI
-            st.error(f"Chart error for {student_name}: {e}. Ensure 'kaleido' is in requirements.txt.")
-            worksheet.write(row_num, 4, "Chart Error", cell_format)
 
         row_num += 1
 
