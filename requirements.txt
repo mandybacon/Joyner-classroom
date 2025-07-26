@@ -1,6 +1,6 @@
 streamlit
 pandas
-plotly
+plotly==5.9.0
 pytz
 xlsxwriter
 kaleido==0.1.0.post1
