@@ -7,6 +7,7 @@ import pytz
 import os
 import io
 import xlsxwriter
+import kaleido
 from behavior_tracker import BehaviorTracker
 from data_manager import DataManager
 
