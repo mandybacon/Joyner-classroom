@@ -112,28 +112,28 @@ def generate_printable_html(student_list):
             total_entries = len(student_data)
             percentages = {color: (color_counts.get(color, 0) / total_entries) * 100 for color in color_names}
 
-            # --- Generate Pie Chart ---
+            # --- Generate Pie Chart as SVG ---
             try:
                 fig_pie = px.pie(values=list(percentages.values()), names=color_names, color=color_names, color_discrete_map=colors)
                 fig_pie.update_layout(showlegend=False, width=280, height=280, margin=dict(l=10, r=10, t=10, b=10))
                 fig_pie.update_traces(textposition='inside', textinfo='percent+label')
-                img_bytes = fig_pie.to_image(format="png", scale=2)
+                img_bytes = fig_pie.to_image(format="svg")
                 img_base64 = base64.b64encode(img_bytes).decode()
-                pie_chart_html = f'<h4>Behavior Distribution</h4><img src="data:image/png;base64,{img_base64}" alt="Pie Chart">'
+                pie_chart_html = f'<h4>Behavior Distribution</h4><img src="data:image/svg+xml;base64,{img_base64}" alt="Pie Chart">'
             except Exception:
                 pie_chart_html = "<h4>Behavior Distribution</h4><p>Chart could not be generated.</p>"
 
-            # --- Generate Bar Chart ---
+            # --- Generate Bar Chart as SVG ---
             try:
                 fig_bar = px.bar(x=color_names, y=[percentages[c] for c in color_names], color=color_names, color_discrete_map=colors)
                 fig_bar.update_layout(showlegend=False, width=300, height=280, margin=dict(l=10, r=10, t=10, b=10), yaxis_title="Percentage (%)")
-                img_bytes = fig_bar.to_image(format="png", scale=2)
+                img_bytes = fig_bar.to_image(format="svg")
                 img_base64 = base64.b64encode(img_bytes).decode()
-                bar_chart_html = f'<h4>Behavior Percentages</h4><img src="data:image/png;base64,{img_base64}" alt="Bar Chart">'
+                bar_chart_html = f'<h4>Behavior Percentages</h4><img src="data:image/svg+xml;base64,{img_base64}" alt="Bar Chart">'
             except Exception:
                 bar_chart_html = "<h4>Behavior Percentages</h4><p>Chart could not be generated.</p>"
 
-            # --- Generate Timeline Chart ---
+            # --- Generate Timeline Chart as SVG ---
             try:
                 recent_data = student_data.sort_values('date', ascending=False).head(10)
                 fig_timeline = go.Figure()
@@ -144,9 +144,9 @@ def generate_printable_html(student_list):
                     for _, row in recent_data.iterrows():
                         fig_timeline.add_trace(go.Scatter(x=[row['date']], y=[row['color']], mode='markers', marker=dict(size=15, color=colors[row['color']], line=dict(width=2, color='black')), name=row['color'], showlegend=False))
                 fig_timeline.update_layout(width=600, height=280, margin=dict(l=10, r=10, t=10, b=10), yaxis=dict(categoryorder='array', categoryarray=color_names), xaxis_title="Date")
-                img_bytes = fig_timeline.to_image(format="png", scale=2)
+                img_bytes = fig_timeline.to_image(format="svg")
                 img_base64 = base64.b64encode(img_bytes).decode()
-                timeline_html = f'<h4>Recent Behavior Timeline</h4><img src="data:image/png;base64,{img_base64}" alt="Timeline Chart">'
+                timeline_html = f'<h4>Recent Behavior Timeline</h4><img src="data:image/svg+xml;base64,{img_base64}" alt="Timeline Chart">'
             except Exception:
                 timeline_html = "<h4>Recent Behavior Timeline</h4><p>Chart could not be generated.</p>"
 
