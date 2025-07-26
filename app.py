@@ -577,17 +577,21 @@ def display_student_details(student_name):
                     
                     with st.spinner("Generating report..."):
                         report_html = generate_printable_html(student_list)
-                        # Make HTML safe for JS
                         js_html = report_html.replace("`", "\\`").replace("\n", "")
                         
-                        # Script to open and write to a new tab
                         js_script = f"""
                             <script>
                                 const reportHtml = `{js_html}`;
                                 const newTab = window.open();
-                                newTab.document.open();
-                                newTab.document.write(reportHtml);
-                                newTab.document.close();
+                                if (newTab) {{
+                                    newTab.document.open();
+                                    newTab.document.write(reportHtml);
+                                    newTab.document.close();
+                                }} else {{
+                                    // This part is for the main window if pop-up fails
+                                    const mainApp = parent.document.querySelector('iframe').contentDocument;
+                                    mainApp.body.innerHTML = '<h1>Pop-up blocked</h1><p>Please allow pop-ups for this site to view the report.</p>';
+                                }}
                             </script>
                         """
                         st.components.v1.html(js_script, height=0)
