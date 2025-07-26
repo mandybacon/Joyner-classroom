@@ -577,12 +577,21 @@ def display_student_details(student_name):
                     
                     with st.spinner("Generating report..."):
                         report_html = generate_printable_html(student_list)
-                        b64 = base64.b64encode(report_html.encode()).decode()
-                        href = f'<a href="data:text/html;base64,{b64}" target="_blank" rel="noopener noreferrer" id="open-report-link"></a>'
-                        st.markdown(href, unsafe_allow_html=True)
-                        st.success("Your report is ready!")
-                        # Use JavaScript to automatically click the link
-                        st.components.v1.html("<script>document.getElementById('open-report-link').click();</script>", height=0)
+                        # Make HTML safe for JS
+                        js_html = report_html.replace("`", "\\`").replace("\n", "")
+                        
+                        # Script to open and write to a new tab
+                        js_script = f"""
+                            <script>
+                                const reportHtml = `{js_html}`;
+                                const newTab = window.open();
+                                newTab.document.open();
+                                newTab.document.write(reportHtml);
+                                newTab.document.close();
+                            </script>
+                        """
+                        st.components.v1.html(js_script, height=0)
+                        st.success("Your report is ready! If a new tab did not open, please check your browser's pop-up blocker.")
 
 
             if st.button("Close Print View"):
