@@ -7,6 +7,7 @@ import pytz
 import os
 import io
 import xlsxwriter
+import base64
 from behavior_tracker import BehaviorTracker
 from data_manager import DataManager
 
@@ -27,6 +28,8 @@ if 'persistent_date' not in st.session_state:
     st.session_state.persistent_date = None
 if 'show_export_dialog' not in st.session_state:
     st.session_state.show_export_dialog = False
+if 'show_print_dialog' not in st.session_state:
+    st.session_state.show_print_dialog = False
 
 
 def generate_excel_report(start_date, end_date):
@@ -89,6 +92,97 @@ def generate_excel_report(start_date, end_date):
 
     workbook.close()
     return output.getvalue()
+
+
+def generate_printable_html(student_list):
+    """Generates a single HTML string for printing one or more student reports."""
+    
+    all_student_html = ""
+    for student_name in student_list:
+        student_data = st.session_state.data_manager.get_student_behavior_data(student_name)
+        
+        # Chart Image
+        chart_html = ""
+        if not student_data.empty:
+            colors = st.session_state.behavior_tracker.get_color_options()
+            color_counts = student_data['color'].value_counts()
+            fig = px.pie(values=color_counts.values, names=color_counts.index, color=color_counts.index, color_discrete_map=colors)
+            fig.update_layout(showlegend=False, width=300, height=300, margin=dict(l=10, r=10, t=10, b=10))
+            fig.update_traces(textposition='inside', textinfo='percent+label')
+            
+            try:
+                img_bytes = fig.to_image(format="png", scale=2)
+                img_base64 = base64.b64encode(img_bytes).decode()
+                chart_html = f'<img src="data:image/png;base64,{img_base64}" alt="Behavior Chart">'
+            except Exception:
+                chart_html = "<p>Chart could not be generated.</p>"
+
+        # Points Summary
+        points_summary = st.session_state.behavior_tracker.calculate_points_summary(student_data)
+        
+        # Assemble HTML for one student
+        all_student_html += f"""
+        <div class="student-report">
+            <h2>{student_name}</h2>
+            <div class="content-container">
+                <div class="summary-table">
+                    <table>
+                        <tr><th>Category</th><th>Value</th></tr>
+                        <tr><td>Good Points</td><td>{points_summary['total_good_points']}</td></tr>
+                        <tr><td>Bad Points</td><td>{points_summary['total_bad_points']}</td></tr>
+                        <tr><td>Good Behavior %</td><td>{points_summary['good_percentage']}%</td></tr>
+                        <tr><td>Days Recorded</td><td>{points_summary['days_recorded']}</td></tr>
+                    </table>
+                </div>
+                <div class="chart-container">
+                    {chart_html}
+                </div>
+            </div>
+        </div>
+        """
+
+    # Final HTML with styles and print script
+    full_html = f"""
+    <html>
+    <head>
+        <title>Behavior Report</title>
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap');
+            body {{ font-family: 'Poppins', sans-serif; }}
+            .student-report {{
+                page-break-after: always;
+                padding: 20px;
+                border: 1px solid #ccc;
+                border-radius: 10px;
+                margin-bottom: 20px;
+            }}
+            .student-report:last-child {{ page-break-after: auto; }}
+            h1 {{ text-align: center; }}
+            h2 {{ border-bottom: 2px solid #eee; padding-bottom: 5px; }}
+            .content-container {{ display: flex; align-items: center; }}
+            .summary-table {{ flex: 1; padding-right: 20px; }}
+            .chart-container {{ flex: 1; text-align: center; }}
+            table {{ width: 100%; border-collapse: collapse; }}
+            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+            th {{ background-color: #f2f2f2; }}
+            @media print {{
+                body {{ -webkit-print-color-adjust: exact; }}
+                .no-print {{ display: none; }}
+            }}
+        </style>
+    </head>
+    <body>
+        <h1>Behavior Report</h1>
+        {all_student_html}
+        <script>
+            window.onload = function() {{
+                window.print();
+            }};
+        </script>
+    </body>
+    </html>
+    """
+    return full_html
 
 
 def main():
@@ -449,18 +543,51 @@ def display_student_details(student_name):
                                                   categoryarray=color_names))
             st.plotly_chart(fig_timeline, use_container_width=True)
 
-        # --- EXPORT AND CLEAR BUTTONS ---
+        # --- EXPORT, PRINT, AND CLEAR BUTTONS ---
         st.write("")
         st.write("")
-        export_col, clear_col = st.columns([0.8, 0.2])
+        export_col, print_col, clear_col = st.columns([0.4, 0.4, 0.2])
         with export_col:
-            if st.button("Export Select Data"):
+            if st.button("Export Full Report..."):
                 st.session_state.show_export_dialog = True
+                st.rerun()
+        with print_col:
+            if st.button("Print Behavior Data"):
+                st.session_state.show_print_dialog = True
                 st.rerun()
         with clear_col:
             if st.button("Clear Behavior Data",
                          key=f"clear_link_{student_name}"):
                 st.session_state[f'show_clear_dialog_{student_name}'] = True
+
+        # --- PRINT DIALOG ---
+        if st.session_state.show_print_dialog:
+            with st.form("print_form"):
+                st.markdown("---")
+                st.markdown("#### Print Behavior Report")
+                
+                print_option = st.radio(
+                    "Select which students to print:",
+                    (f"Only {student_name}", "All Students"),
+                    key="print_radio"
+                )
+                
+                submitted = st.form_submit_button("Generate & Print")
+
+                if submitted:
+                    if print_option == f"Only {student_name}":
+                        student_list = [student_name]
+                    else:
+                        student_list = st.session_state.students_df['name'].tolist()
+                    
+                    with st.spinner("Generating printable report..."):
+                        printable_html = generate_printable_html(student_list)
+                        st.components.v1.html(printable_html, height=0, scrolling=False)
+                        st.success("Your report is ready. Please check your browser's print dialog.")
+
+            if st.button("Close Print View"):
+                st.session_state.show_print_dialog = False
+                st.rerun()
 
         # --- EXPORT DIALOG ---
         if st.session_state.show_export_dialog:
